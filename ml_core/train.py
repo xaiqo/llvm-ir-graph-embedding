@@ -1,46 +1,66 @@
+import os
 import torch
+import pytorch_lightning as pl
+from torch_geometric.loader import DataLoader
 from ml_core.data.loader import LLVMGraphDataset
 from ml_core.models.gnn import HybridGNN
-from torch_geometric.loader import DataLoader
+import torch.nn.functional as F
 
-def train():
-    use_bert = False 
-    dataset = LLVMGraphDataset(root="data/processed/graphs", use_bert=use_bert)
-    
-    loader = DataLoader(dataset, batch_size=32, shuffle=True)
-    
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    num_features = dataset.num_node_features()
-    if not use_bert:
-        num_features = 1000 # Dummy vocab size
+class GraphModule(pl.LightningModule):
+    def __init__(self, hparams):
+        super().__init__()
+        self.save_hyperparameters(hparams)
         
-    model = HybridGNN(num_node_features=num_features, num_edge_types=6, use_bert=use_bert).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        # If BERT is used, input dim is 768, else it's vocab size (dummy 1000)
+        input_dim = 768 if self.hparams.use_bert else 1000
+        
+        self.model = HybridGNN(
+            num_node_features=input_dim,
+            num_edge_types=6,
+            hidden_dim=self.hparams.hidden_dim,
+            num_classes=self.hparams.num_classes,
+            use_bert=self.hparams.use_bert
+        )
+
+    def forward(self, data):
+        return self.model(data)
+
+    def training_step(self, batch, batch_idx):
+        # Dummy labels (replace with real labels from dataset)
+        y = torch.randint(0, self.hparams.num_classes, (batch.num_graphs,)).to(self.device)
+        
+        out = self(batch)
+        loss = F.nll_loss(out, y)
+        self.log("train_loss", loss, prog_bar=True)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
+
+    def train_dataloader(self):
+        dataset = LLVMGraphDataset(
+            root=self.hparams.data_dir, 
+            use_bert=self.hparams.use_bert
+        )
+        return DataLoader(dataset, batch_size=self.hparams.batch_size, shuffle=True, num_workers=4)
+
+# Hydra Entry Point
+import hydra
+from omegaconf import DictConfig
+
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(cfg: DictConfig):
+    pl.seed_everything(cfg.seed)
     
-    print(f"Starting training on {device} (BERT={use_bert})...")
+    model = GraphModule(cfg.model)
+    trainer = pl.Trainer(
+        max_epochs=cfg.train.epochs,
+        accelerator="auto",
+        devices=1,
+        log_every_n_steps=10
+    )
     
-    model.train()
-    for epoch in range(10):
-        total_loss = 0
-        for data in loader:
-            data = data.to(device)
-            optimizer.zero_grad()
-            out = model(data)
-            
-            y = torch.randint(0, 10, (data.num_graphs,)).to(device)
-            
-            loss = torch.nn.functional.nll_loss(out, y)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-            
-        print(f"Epoch {epoch}, Loss: {total_loss}")
+    trainer.fit(model)
 
 if __name__ == "__main__":
-    import os
-    if not os.path.exists("data/processed/graphs"):
-        print("Please run pipeline first to generate graphs.")
-    else:
-        train()
-
+    main()

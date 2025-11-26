@@ -7,7 +7,7 @@ from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 
 # Configuration
-LLVM_BIN_DIR = "/usr/bin"
+LLVM_BIN_DIR = "/usr/bin" 
 CLANG = "clang++-17"
 OPT = "opt-17"
 PASS_LIB = "llvm_pass/build/GraphExtractor.so" # Path relative to project root
@@ -29,7 +29,6 @@ def compile_to_ir(src_file, output_dir, optimize=False):
         flags.insert(0, "-O3")
     else:
         flags.insert(0, "-O0")
-        # flags.append("-Xclang -disable-O0-optnone") # Sometimes needed to allow further passes
         
     cmd = [CLANG] + flags
     
@@ -44,28 +43,24 @@ def extract_graph(ir_file, output_dir):
     if not ir_file: return None
     
     filename = os.path.basename(ir_file)
-    json_file = os.path.join(output_dir, filename.replace(".ll", ".json"))
+    toon_file = os.path.join(output_dir, filename.replace(".ll", ".toon"))
     
-    # Command for Legacy PM (RegisterPass)
     cmd = [
         OPT,
-        "-enable-new-pm=0",
-        "-load", PASS_LIB,
-        "-extract-graph", # The flag defined in RegisterPass
+        "-load-pass-plugin", PASS_LIB,
+        "-passes=extract-graph", 
         ir_file,
-        "-disable-output"
+        "-disable-output" 
     ]
     
     try:
-        # The pass prints JSON to stderr (errs())
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        graph_json = result.stderr
+        graph_data = result.stderr
         
-        # Simple validation (check if it looks like JSON)
-        if graph_json.strip().startswith("{"):
-            with open(json_file, "w") as f:
-                f.write(graph_json)
-            return json_file
+        if "nodes[" in graph_data:
+            with open(toon_file, "w") as f:
+                f.write(graph_data)
+            return toon_file
         else:
             return None
             
@@ -87,20 +82,16 @@ def main():
     parser.add_argument("--optimize", action="store_true", help="Use O3 optimization")
     args = parser.parse_args()
 
-    # Setup directories
     ir_dir = os.path.join(args.output, "ir")
     graph_dir = os.path.join(args.output, "graphs")
     os.makedirs(ir_dir, exist_ok=True)
     os.makedirs(graph_dir, exist_ok=True)
 
-    # Find files
     files = glob.glob(os.path.join(args.input, "**/*.cpp"), recursive=True)
     print(f"Found {len(files)} source files.")
 
-    # Prepare tasks
     tasks = [(f, ir_dir, graph_dir, args.optimize) for f in files]
 
-    # Run pipeline
     success_count = 0
     with ProcessPoolExecutor(max_workers=args.jobs) as executor:
         results = list(tqdm(executor.map(process_file, tasks), total=len(tasks)))
@@ -110,4 +101,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
