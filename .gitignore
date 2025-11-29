@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv
+venv/
+.env
+
+# C++ Build
+llvm_pass/build/
+*.so
+*.o
+*.ll
+*.bc
+
+# Data & Models
+data/raw/
+data/processed/
+lightning_logs/
+outputs/
+*.ckpt
+*.pth
+*.bin
+
+# Hydra
+.hydra/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Docker
+.docker_id
+
+# Temporary
+temp_inference/
+tsne_*.png
+tasks/
