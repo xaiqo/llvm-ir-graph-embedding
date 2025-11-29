@@ -6,22 +6,49 @@ import json
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 
-# Configuration
-LLVM_BIN_DIR = "/usr/bin" 
+LLVM_BIN_DIR = "/usr/bin"
 CLANG = "clang++-17"
 OPT = "opt-17"
-PASS_LIB = "llvm_pass/build/GraphExtractor.so" # Path relative to project root
+PASS_LIB = "llvm_pass/build/lib/GraphExtractor.so"
 
 def compile_to_ir(src_file, output_dir, optimize=False):
-    """Compiles C++ source to LLVM IR (.ll)"""
+    """Compiles C++ source to LLVM IR (.ll) with header injection"""
     filename = os.path.basename(src_file)
     name_no_ext = os.path.splitext(filename)[0]
     ir_file = os.path.join(output_dir, name_no_ext + ".ll")
     
+    temp_src = os.path.join(output_dir, name_no_ext + "_temp.cpp")
+    
+    COMMON_HEADERS = """
+    #include <cstdio>
+    #include <cstdlib>
+    #include <cstring>
+    #include <iostream>
+    #include <vector>
+    #include <algorithm>
+    #include <cmath>
+    #include <map>
+    #include <set>
+    #include <queue>
+    #include <stack>
+    using namespace std;
+    """
+    
+    try:
+        with open(src_file, 'r', encoding='utf-8', errors='ignore') as f:
+            original_code = f.read()
+            
+        with open(temp_src, 'w', encoding='utf-8') as f:
+            f.write(COMMON_HEADERS + "\n" + original_code)
+            
+    except Exception as e:
+        return None
+    
     flags = [
-        "-S", "-emit-llvm",                 # Emit human-readable IR
-        "-fno-discard-value-names",         # Keep variable names for debugging/embedding
-        "-c", src_file,
+        "-S", "-emit-llvm",                 
+        "-fno-discard-value-names",
+        "-Wno-everything", 
+        "-c", temp_src,
         "-o", ir_file
     ]
     
@@ -34,8 +61,12 @@ def compile_to_ir(src_file, output_dir, optimize=False):
     
     try:
         subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if os.path.exists(temp_src):
+            os.remove(temp_src)
         return ir_file
     except subprocess.CalledProcessError:
+        if os.path.exists(temp_src):
+            os.remove(temp_src)
         return None
 
 def extract_graph(ir_file, output_dir):

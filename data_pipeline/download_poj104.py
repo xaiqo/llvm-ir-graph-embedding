@@ -18,7 +18,6 @@ def download_poj104(output_dir):
         labels.json
     """
     print("Downloading POJ-104 from HuggingFace...")
-    # Using the official Microsoft dataset mirrored on HF
     dataset = load_dataset("google/code_x_glue_cc_clone_detection_poj104", split=None)
     
     print("Dataset loaded. Processing splits...")
@@ -37,16 +36,13 @@ def download_poj104(output_dir):
         print(f"Processing {split} set ({len(data_split)} samples)...")
         
         for item in tqdm(data_split):
-            # Item fields: id, code, label
             file_id = item['id']
             code = item['code']
-            label = str(item['label']) # Class ID (algorithm type)
+            label = str(item['label'])
             
-            # Create class directory
             class_dir = os.path.join(target_dir, label)
             os.makedirs(class_dir, exist_ok=True)
             
-            # Save C++ file
             file_path = os.path.join(class_dir, f"{file_id}.cpp")
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(code)
@@ -63,4 +59,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     download_poj104(args.output)
+
 
