@@ -1,17 +1,15 @@
 #!/bin/bash
 set -e
 
+# Create build directory
 mkdir -p build
 cd build
 
-cmake -G Ninja .. \
+# Configure
+cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm
 
-ninja
+make -j$(nproc)
 
-echo "Build complete. Plugin is at $(pwd)/GraphExtractor.so"
-
-
-
-
+echo "Build complete. Plugin is at $(pwd)/lib/GraphExtractor.so"
