@@ -42,9 +42,9 @@ class GraphModule(pl.LightningModule):
             root=self.hparams.data_dir, 
             use_bert=self.hparams.use_bert
         )
-        return DataLoader(dataset, batch_size=self.hparams.batch_size, shuffle=True, num_workers=4)
 
-# Hydra Entry Point
+        return DataLoader(dataset, batch_size=self.hparams.batch_size, shuffle=True, num_workers=0)
+
 import hydra
 from omegaconf import DictConfig
 
@@ -53,9 +53,12 @@ def main(cfg: DictConfig):
     pl.seed_everything(cfg.seed)
     
     model = GraphModule(cfg.model)
+    
+    accelerator = cfg.get("trainer", {}).get("accelerator", "cpu")
+    
     trainer = pl.Trainer(
         max_epochs=cfg.train.epochs,
-        accelerator="auto",
+        accelerator=accelerator,
         devices=1,
         log_every_n_steps=10
     )
