@@ -32,13 +32,15 @@ def predict(src_file, ckpt_path):
     raw = parser.parse_file(toon_file)
 
     print(f"Loading Model from {ckpt_path}...")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     try:
-        model = GraphModule.load_from_checkpoint(ckpt_path, map_location=device, weights_only=False)
-    except TypeError:
         model = GraphModule.load_from_checkpoint(ckpt_path, map_location=device)
+    except Exception as e:
+        print(f"Error loading checkpoint: {e}")
+        return
         
     model.eval()
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     
     # Nodes
