@@ -31,26 +31,62 @@ def predict(src_file, ckpt_path):
     parser = TOONParser()
     raw = parser.parse_file(toon_file)
 
-    
     print(f"Loading Model from {ckpt_path}...")
-    model = GraphModule.load_from_checkpoint(ckpt_path)
+    try:
+        model = GraphModule.load_from_checkpoint(ckpt_path, map_location=device, weights_only=False)
+    except TypeError:
+        model = GraphModule.load_from_checkpoint(ckpt_path, map_location=device)
+        
     model.eval()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     
+    # Nodes
+    node_id_map = {node['id']: i for i, node in enumerate(raw.get('nodes', []))}
+    
     if model.hparams.use_bert:
-        encoder = CodeBERTEncoder()
-        texts = [f"{n['category']}: {n.get('label','')} {n.get('type_id','')}" for n in raw['nodes']]
-        x = encoder.encode(texts).to(device)
+        encoder = CodeBERTEncoder(device=device)
+        texts = [f"{n['category']}: {n.get('label','')} {n.get('type_id','')}" for n in raw.get('nodes', [])]
+        x = encoder.encode(texts) # Encoder handles device placement
     else:
-        print("  Warning: Discrete mode requires vocabulary mapping. Use BERT mode for portability.")
+        print("  Error: Discrete mode requires vocabulary mapping. Use BERT mode for inference demo.")
         return
 
+    # Edges
+    edge_type_map = {
+        "Control_Next": 0, "Control_Jump": 1, "Data_Use": 2, 
+        "Type_Of": 3, "Memory_Alias": 4, "Memory_MustAlias": 5
+    }
+    
+    edge_index = []
+    edge_attr = []
+    
+    for edge in raw.get('edges', []):
+        if edge['src'] in node_id_map and edge['dst'] in node_id_map:
+            src = node_id_map[edge['src']]
+            dst = node_id_map[edge['dst']]
+            edge_index.append([src, dst])
+            edge_attr.append(edge_type_map.get(edge['type'], 0))
+            
+    if not edge_index:
+        edge_index = torch.zeros((2, 0), dtype=torch.long).to(device)
+        edge_attr = torch.zeros((0), dtype=torch.long).to(device)
+    else:
+        edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous().to(device)
+        edge_attr = torch.tensor(edge_attr, dtype=torch.long).to(device)
+        
+    # Batch wrapper (PyG models expect batch index)
+    batch = torch.zeros(x.size(0), dtype=torch.long).to(device)
+    data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, batch=batch)
+
+    print("  Running Inference...")
     with torch.no_grad():
         out = model(data)
-        pred_class = out.argmax(dim=1).item()
+        probs = torch.exp(out)
+        pred_class = probs.argmax(dim=1).item()
+        confidence = probs[0, pred_class].item()
         
-    print(f"  Predicted Class: {pred_class}")
+    print(f"  Predicted Class: {pred_class} (Confidence: {confidence:.2f})")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -59,4 +95,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     predict(args.file, args.ckpt)
-
