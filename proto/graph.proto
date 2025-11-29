@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package llvm_graph;
+
+// Represents a specific type in LLVM (e.g., i32, struct.Foo*)
+message TypeNode {
+  string id = 1;
+  string printable_name = 2;
+  bool is_pointer = 3;
+  repeated string sub_types = 4; // For structs/arrays
+}
+
+// Represents a value or instruction
+message Node {
+  string id = 1;
+  enum Category {
+    UNKNOWN = 0;
+    INSTRUCTION = 1;
+    VALUE = 2;      // Function Argument, Constant
+    TYPE = 3;       // Explicit Type Node
+    BASIC_BLOCK = 4; // Super-node for hierarchy
+  }
+  Category category = 2;
+  
+  // Semantic features
+  string opcode = 3;       // e.g., "add", "load"
+  string type_id = 4;      // Reference to TypeNode
+  
+  // Textual representation for Transformer/BERT (Token-Oriented)
+  string text_content = 5; // e.g. "%3 = add nsw i32 %1, %2"
+}
+
+message Edge {
+  string src = 1;
+  string dst = 2;
+  
+  enum EdgeType {
+    CONTROL_FLOW = 0;    // Control_Next
+    CONTROL_JUMP = 1;    // Branch/Switch
+    DATA_FLOW = 2;       // Def-Use Chain
+    TYPE_BINDING = 3;    // Instruction -> Type
+    MEMORY_ALIAS = 4;    // May-Alias
+    MEMORY_MUST_ALIAS = 5; // Must-Alias
+  }
+  EdgeType type = 3;
+}
+
+// The full program graph
+message ProgramGraph {
+  string function_name = 1;
+  repeated Node nodes = 2;
+  repeated Edge edges = 3;
+  repeated TypeNode types = 4;
+}
+
