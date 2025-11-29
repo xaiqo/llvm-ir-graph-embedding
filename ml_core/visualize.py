@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 from ml_core.train import GraphModule
 from ml_core.data.loader import LLVMGraphDataset
 from torch_geometric.loader import DataLoader
+from torch_geometric.nn import global_mean_pool
 import argparse
 import os
 
@@ -15,7 +16,12 @@ def visualize_embeddings(ckpt_path, data_dir, output_file="tsne_plot.png", limit
     and visualizes them using t-SNE.
     """
     print(f"Loading checkpoint: {ckpt_path}")
-    model = GraphModule.load_from_checkpoint(ckpt_path)
+
+    try:
+        model = GraphModule.load_from_checkpoint(ckpt_path, map_location="cpu", weights_only=False)
+    except TypeError:
+        model = GraphModule.load_from_checkpoint(ckpt_path, map_location="cpu")
+        
     model.eval()
     model.freeze()
     
@@ -54,7 +60,7 @@ def visualize_embeddings(ckpt_path, data_dir, output_file="tsne_plot.png", limit
             h = torch.relu(h)
             h = model.model.conv3(h, edge_index, edge_type)
             
-            graph_emb = pl.utilities.seed.global_mean_pool(h, batch)
+            graph_emb = global_mean_pool(h, batch)
             
             embeddings.append(graph_emb.cpu().numpy())
 
@@ -80,7 +86,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt", required=True, help="Path to model checkpoint (.ckpt)")
     parser.add_argument("--data", required=True, help="Path to graph data directory")
+    parser.add_argument("--output", default="tsne_plot.png", help="Output image file")
     args = parser.parse_args()
     
-    visualize_embeddings(args.ckpt, args.data)
+    # Handle glob pattern for checkpoint manually if passed as string
+    import glob
+    if "*" in args.ckpt:
+        files = glob.glob(args.ckpt)
+        if not files:
+            print("No checkpoint found matching pattern.")
+            exit(1)
+        args.ckpt = files[-1] # Take the latest
+        print(f"Auto-selected checkpoint: {args.ckpt}")
+    
+    visualize_embeddings(args.ckpt, args.data, args.output)
+
 
